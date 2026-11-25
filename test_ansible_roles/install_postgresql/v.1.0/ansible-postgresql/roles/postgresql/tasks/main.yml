@@ -1,0 +1,76 @@
+---
+- name: Установить базовые пакеты
+  ansible.builtin.apt:
+    name: [gnupg, ca-certificates, curl]
+    state: present
+    update_cache: true
+  become: true
+
+- name: Создать каталог для ключей APT
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Добавить GPG-ключ PGDG
+  ansible.builtin.get_url:
+    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    dest: /etc/apt/keyrings/pgdg.asc
+    mode: "0644"
+  become: true
+
+- name: Подключить репозиторий PGDG (trixie-pgdg)
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [signed-by=/etc/apt/keyrings/pgdg.asc]
+      https://apt.postgresql.org/pub/repos/apt
+      {{ ansible_distribution_release }}-pgdg main
+    filename: pgdg
+    state: present
+  become: true
+
+- name: Установить PostgreSQL {{ pg_version }}
+  ansible.builtin.apt:
+    name:
+      - "postgresql-{{ pg_version }}"
+      - "postgresql-client-{{ pg_version }}"
+      - "postgresql-contrib-{{ pg_version }}"
+    state: present
+    update_cache: true
+  become: true
+  notify: Restart postgresql
+
+- name: Разрешить подключения с нужных адресов (pg_hba.conf)
+  ansible.builtin.lineinfile:
+    path: "/etc/postgresql/{{ pg_version }}/main/pg_hba.conf"
+    regexp: '^host\s+all\s+all\s+0\.0\.0\.0/0'
+    line: "host    all    all    {{ pg_allowed_cidr }}    scram-sha-256"
+    insertafter: '^# TYPE'
+  become: true
+  notify: Restart postgresql
+
+- name: Слушать внешние адреса
+  ansible.builtin.lineinfile:
+    path: "/etc/postgresql/{{ pg_version }}/main/postgresql.conf"
+    regexp: '^#?listen_addresses'
+    line: "listen_addresses = '{{ pg_listen_addresses }}'"
+  become: true
+  notify: Restart postgresql
+
+- name: Убедиться, что служба запущена и включена в автозагрузку
+  ansible.builtin.systemd:
+    name: "postgresql@{{ pg_version }}-main"
+    state: started
+    enabled: true
+  become: true
+
+- name: Проверить, что СУБД отвечает
+  ansible.builtin.command: /usr/lib/postgresql/{{ pg_version }}/bin/pg_isready
+  register: pg_ready
+  changed_when: false
+  become: true
+
+- name: Вывести статус
+  ansible.builtin.debug:
+    var: pg_ready.stdout
