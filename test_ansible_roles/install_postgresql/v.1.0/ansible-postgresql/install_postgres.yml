@@ -1,0 +1,16 @@
+---
+- name: Добавить целевой сервер СУБД во внутренний inventory
+  hosts: awx_runner
+  gather_facts: false
+  tasks:
+    - name: Добавить хост по IP
+      ansible.builtin.add_host:
+        name: db_server
+        ansible_host: "{{ db_server_ip }}"
+        groups: db
+
+- name: Установка PostgreSQL
+  hosts: db
+  become: true
+  roles:
+    - postgresql
