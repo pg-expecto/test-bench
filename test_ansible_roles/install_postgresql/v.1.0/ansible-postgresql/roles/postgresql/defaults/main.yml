@@ -1,0 +1,4 @@
+---
+pg_version: "17"
+pg_listen_addresses: "*"
+pg_allowed_cidr: "0.0.0.0/0"
